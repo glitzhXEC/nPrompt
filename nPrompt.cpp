@@ -754,8 +754,11 @@ static bool IsMarkChar(wchar_t c) {
 
     WORD t = 0;
     unsigned char v = 0;
+    // C3_VOWELMARK is NOT a good test: Thai leading vowels (เ แ โ ใ ไ) and SARA AA
+    // are flagged as vowel marks but they are spacing characters with their own
+    // advance. Only truly non-spacing marks (tone marks, above/below vowels) count.
     if (GetStringTypeW(CT_CTYPE3, &c, 1, &t))
-        v = (t & (C3_NONSPACING | C3_DIACRITIC | C3_VOWELMARK)) ? 1 : 0;
+        v = (t & (C3_NONSPACING | C3_DIACRITIC)) ? 1 : 0;
     if (count < 64) {
         seen[count] = c;
         seenVal[count] = v;
