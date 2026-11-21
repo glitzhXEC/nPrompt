@@ -257,6 +257,11 @@ Still stale? Restart Explorer:
 taskkill /f /im explorer.exe & start explorer
 ```
 
+**Windows says "Windows protected your PC" when I run it**
+
+The exe is not code-signed, so SmartScreen warns about any file downloaded from the
+internet. Click **More info -> Run anyway**. Pinning works normally afterwards.
+
 ## Known limitations
 
 * Text length is limited by the registry value size (~1 MB), far more than a prompt needs.
