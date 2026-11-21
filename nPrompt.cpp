@@ -742,6 +742,37 @@ static int TextWidth(HDC dc, const wstring& s) {
     return sz.cx;
 }
 
+// Combining marks (Thai tone marks, vowels above/below, ...) have no advance of
+// their own - they ride on the preceding base character.
+static bool IsMarkChar(wchar_t c) {
+    if ((unsigned)c < 128) return false;
+    static wchar_t seen[64];
+    static unsigned char seenVal[64];
+    static int count = 0;
+    for (int i = 0; i < count; ++i)
+        if (seen[i] == c) return seenVal[i] != 0;
+
+    WORD t = 0;
+    unsigned char v = 0;
+    if (GetStringTypeW(CT_CTYPE3, &c, 1, &t))
+        v = (t & (C3_NONSPACING | C3_DIACRITIC | C3_VOWELMARK)) ? 1 : 0;
+    if (count < 64) {
+        seen[count] = c;
+        seenVal[count] = v;
+        ++count;
+    }
+    return v != 0;
+}
+
+static bool IsMarkUnit(size_t i) {
+    return i < g_units.size() && g_units[i].chip < 0 && IsMarkChar(g_units[i].ch);
+}
+
+static size_t SnapPastMarks(size_t i) {
+    while (i < g_units.size() && IsMarkUnit(i)) ++i;
+    return i;
+}
+
 static int CharWidth(HDC dc, wchar_t c) {
     static int ascii[128] = {0};
     static int gen = -1;
@@ -775,7 +806,18 @@ static int UnitWidth(HDC dc, size_t i) {
         return c.width;
     }
     if (u.ch == L'\n') return 0;
-    return CharWidth(dc, u.ch);
+    if ((unsigned)u.ch < 128) return CharWidth(dc, u.ch);
+    if (IsMarkChar(u.ch)) return 0;
+
+    // measure the whole cluster (base + its marks) exactly like GDI draws it
+    wstring cluster(1, u.ch);
+    size_t j = i + 1;
+    while (j < g_units.size() && g_units[j].chip < 0 && g_units[j].ch != L'\n' &&
+           IsMarkChar(g_units[j].ch)) {
+        cluster += g_units[j].ch;
+        ++j;
+    }
+    return TextWidth(dc, cluster);
 }
 
 static int LineCount() { return (int)g_lineStarts.size(); }
@@ -1042,7 +1084,7 @@ static size_t HitTest(int px, int py) {
 
     for (size_t i = start; i < end; ++i) {
         if (g_units[i].chip < 0 && g_units[i].ch == L'\n') return i;
-        if (px < g_gl[i].x + g_gl[i].w / 2) return i;
+        if (px < g_gl[i].x + g_gl[i].w / 2) return SnapPastMarks(i);
     }
     return LineEndIndex(line);
 }
@@ -1054,7 +1096,7 @@ static size_t PosFromX(int line, int x) {
     size_t end = (line + 1 < LineCount()) ? (size_t)g_lineStarts[line + 1] : g_units.size();
     for (size_t i = start; i < end; ++i) {
         if (g_units[i].chip < 0 && g_units[i].ch == L'\n') return i;
-        if (x < g_gl[i].x + g_gl[i].w / 2) return i;
+        if (x < g_gl[i].x + g_gl[i].w / 2) return SnapPastMarks(i);
     }
     return LineEndIndex(line);
 }
@@ -2402,6 +2444,7 @@ static void PaintView(HWND hwnd) {
                     int uw = (g_units[i].chip >= 0)
                                  ? g_chips[(size_t)g_units[i].chip].width
                                  : g_gl[i].w;
+                    if (uw == 0 && g_units[i].chip < 0) continue;   // combining mark
                     if (uw < 2) uw = 2;
                     RECT r{ ta.left + g_gl[i].x, y, ta.left + g_gl[i].x + uw, y + g_lineH };
                     FillRect(mem, &r, selBrush);
@@ -2455,15 +2498,28 @@ static void PaintView(HWND hwnd) {
             }
             if (g_units[i].ch == L'\n') { ++i; continue; }
 
-            size_t j = i;
-            wstring run;
-            while (j < end && g_units[j].chip < 0 && g_units[j].ch != L'\n') {
-                run += g_units[j].ch;
-                ++j;
-            }
             SetTextColor(mem, C_TEXT);
-            TextOutW(mem, ta.left + g_gl[i].x, y, run.c_str(), (int)run.size());
-            i = j;
+            if ((unsigned)g_units[i].ch < 128) {
+                size_t j = i;
+                wstring run;
+                while (j < end && g_units[j].chip < 0 && g_units[j].ch != L'\n' &&
+                       (unsigned)g_units[j].ch < 128) {
+                    run += g_units[j].ch;
+                    ++j;
+                }
+                TextOutW(mem, ta.left + g_gl[i].x, y, run.c_str(), (int)run.size());
+                i = j;
+            } else {
+                wstring cl(1, g_units[i].ch);
+                size_t j = i + 1;
+                while (j < end && g_units[j].chip < 0 && g_units[j].ch != L'\n' &&
+                       IsMarkChar(g_units[j].ch)) {
+                    cl += g_units[j].ch;
+                    ++j;
+                }
+                TextOutW(mem, ta.left + g_gl[i].x, y, cl.c_str(), (int)cl.size());
+                i = j;
+            }
         }
     }
 
@@ -2615,6 +2671,7 @@ static size_t PrevPos(size_t pos) {
     if (p > 0 && g_units[p].ch >= 0xDC00 && g_units[p].ch <= 0xDFFF &&
         g_units[p - 1].ch >= 0xD800 && g_units[p - 1].ch <= 0xDBFF)
         p--;
+    while (p > 0 && IsMarkUnit(p)) --p;   // never park the caret inside a cluster
     return p;
 }
 
@@ -2624,6 +2681,7 @@ static size_t NextPos(size_t pos) {
     if (pos + 1 < g_units.size() && g_units[pos].ch >= 0xD800 && g_units[pos].ch <= 0xDBFF &&
         g_units[pos + 1].ch >= 0xDC00 && g_units[pos + 1].ch <= 0xDFFF)
         p = pos + 2;
+    p = SnapPastMarks(p);
     return p;
 }
 

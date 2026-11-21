@@ -36,6 +36,7 @@ gets a naked path pasted into it. nPrompt collapses those three steps:
 | **Paths inside prose** | Paste a paragraph containing `C:\...` paths and every existing path becomes a chip; the rest stays text |
 | **Links** | Paste a single URL -> link chip; copying gives the full `https://...` back |
 | **Chips copy as real paths** | `Ctrl+C` on a chip yields the exact path, no quotes added |
+| **Complex scripts** | Thai (and other mark-based scripts) are measured per cluster, so text, caret and selection line up exactly |
 | **Auto spacing** | A pasted or dropped chip gets a space on either side when it lands between words |
 | **Code blocks** | Pasted code becomes a panel with VS Code style colours (`c`, `js`, `c#`, `rust`, `py`, `lua`, `sh`, `json`, `html`, `sql`, detected automatically) |
 | **Monochrome icons** | ~400 file-type icons and ~1,800 suffix rules, flattened to one line colour so they match the theme |
