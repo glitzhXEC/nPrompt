@@ -165,15 +165,19 @@ Manual build:
 
 ```bat
 :: MSVC
-cl /nologo /std:c++17 /EHsc /O2 /utf-8 nPrompt.cpp /link /SUBSYSTEM:WINDOWS /OUT:nPrompt.exe
+rc /nologo /fo nPrompt.res nPrompt.rc
+cl /nologo /std:c++17 /EHsc /O2 /utf-8 nPrompt.cpp nPrompt.res /link /SUBSYSTEM:WINDOWS /OUT:nPrompt.exe
 
 :: MinGW
-g++ -std=c++17 -O2 -municode -mwindows nPrompt.cpp -o nPrompt.exe ^
+windres -i nPrompt.rc -O coff -o nPrompt.res
+g++ -std=c++17 -O2 -municode -mwindows nPrompt.cpp nPrompt.res -o nPrompt.exe ^
     -lgdiplus -lcomctl32 -luxtheme -lshell32 -lole32 -ladvapi32 -lgdi32 -luser32 -lmsimg32
 ```
 
-`nPrompt.cpp` includes `icons_data.h` (the baked icon sheet), so keep it next to the
-source. No other files are needed at build time.
+`nPrompt.cpp` includes `icons_data.h` (the baked icon sheet) and `nPrompt.rc` embeds
+`nPrompt.ico` plus the version information, so keep those files next to the source.
+The resource step is what gives Explorer / the taskbar an icon to show when the app is
+pinned; building without it still works but Windows falls back to a generic icon.
 
 ## Where the data lives
 
@@ -198,6 +202,8 @@ del /q "%TEMP%\nPrompt\*.png"
 
 ```
 nPrompt.cpp          the whole application (editor, renderer, clipboard, menu)
+nPrompt.rc           icon + version resource (compiled into the exe)
+nPrompt.ico          application icon, 16-256 px
 icons_data.h         generated icon sheet + extension rules
 tools/gen_icons.py   regenerates icons_data.h from catppuccin/zed-icons
 build.bat            MSVC / MinGW build script
@@ -233,6 +239,23 @@ A few details that are easy to get wrong and are handled explicitly:
   `GetAsyncKeyState` so synthetic input from automation tools behaves the same.
 * The context menu keeps a `closing` flag: destroying a popup can re-enter
   `WM_ACTIVATE(WA_INACTIVE)` and wipe the chosen command.
+
+## Troubleshooting
+
+**The pinned taskbar icon is blank or generic**
+
+The icon lives inside `nPrompt.exe` (`nPrompt.rc` -> `nPrompt.ico`) and the app sets an
+explicit AppUserModelID (`glitzhXEC.nPrompt`) so the taskbar treats the pinned shortcut
+as the same app. Windows caches taskbar icons, so after replacing the exe:
+
+1. unpin the old button,
+2. run `nPrompt.exe` again and pin it from the taskbar.
+
+Still stale? Restart Explorer:
+
+```bat
+taskkill /f /im explorer.exe & start explorer
+```
 
 ## Known limitations
 

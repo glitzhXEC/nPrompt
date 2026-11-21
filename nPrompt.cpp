@@ -64,6 +64,7 @@ static const wchar_t* kMenuClass = L"nPromptMenu";
 
 static const UINT_PTR ID_TIMER  = 1;
 static const int      ID_HOTKEY = 1;
+static const int      IDI_APPICON = 1;
 
 static const wchar_t CHIP_OPEN  = L'\xE000';
 static const wchar_t CHIP_CLOSE = L'\xE001';
@@ -3850,6 +3851,14 @@ static HICON MakeAppIcon(int size) {
 }
 
 // --------------------------------------------------------------------- main
+static void SetAppUserModelId() {
+    typedef HRESULT(WINAPI *PFN)(PCWSTR);
+    HMODULE sh = LoadLibraryW(L"shell32.dll");
+    if (!sh) return;
+    PFN fn = (PFN)(void*)GetProcAddress(sh, "SetCurrentProcessExplicitAppUserModelID");
+    if (fn) fn(L"glitzhXEC.nPrompt");
+}
+
 static void EnableDpiAwareness() {
     HMODULE u = GetModuleHandleW(L"user32.dll");
     if (u) {
@@ -3898,6 +3907,7 @@ static void RestoreOrPlaceWindow(HWND hwnd) {
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow) {
     g_hInst = hInst;
+    SetAppUserModelId();
     EnableDpiAwareness();
 
     Gdiplus::GdiplusStartupInput gsi;
@@ -3932,10 +3942,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow) {
     wc.style         = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
-    wc.hIcon         = MakeAppIcon(32);
-    wc.hIconSm       = MakeAppIcon(16);
-    if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    if (!wc.hIconSm) wc.hIconSm = wc.hIcon;
+    wc.hIcon         = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(IDI_APPICON),
+                                         IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+    wc.hIconSm       = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(IDI_APPICON),
+                                         IMAGE_ICON, 16, 16, 0);
+    if (!wc.hIcon)   wc.hIcon = MakeAppIcon(32);
+    if (!wc.hIconSm) wc.hIconSm = wc.hIcon ? wc.hIcon : MakeAppIcon(16);
+    if (!wc.hIcon)   wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = g_brBg;
     wc.lpszClassName = kWndClass;
